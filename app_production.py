@@ -43,11 +43,21 @@ def convert_to_seconds(row):
 
 def get_n_cols(fpath: str):
     """取得欄位數量"""
-    with open(fpath, 'r') as f:
-        for line in f.readlines():
-            row = line.strip().rsplit(",")
-            if len(row) > 0 and row[0] == "System Time":
-                return len(row)
+    try:
+        # 簡單的編碼偵測
+        encodings = ['utf-8', 'cp950', 'latin1']
+        for encoding in encodings:
+            try:
+                with open(fpath, 'r', encoding=encoding) as f:
+                    for line in f:
+                        row = line.strip().rsplit(",")
+                        if len(row) > 0 and row[0] == "System Time":
+                            return len(row)
+                break
+            except UnicodeDecodeError:
+                continue
+    except Exception:
+        pass
     return 0
 
 def is_match_date_string(ds: str):
@@ -63,23 +73,40 @@ def extract_origin_csv_original(fpath: str):
     n_cols = get_n_cols(fpath=fpath)
 
     try:
-        with open(fpath, 'r') as f:
-            for line in f.readlines():
-                row = line.strip().rsplit(",")
-                if len(row) > 0 and row[0] in {"%", "@", "Label", "", "$", "System Time", "Start Time"}:
-                    if len(row) == 5 and row[0] == "" and row[1] == "":
-                        step_name = row[2]         
-                    elif len(row) == 2 and row[0] == '%':
-                        last_time_per_step_list.append(len(rows)-1)
-                else:
-                    if len(row) == n_cols and is_match_date_string(row[0]):
-                        row.append(step_name)
-                        rows.append(row)
+        # 嘗試使用 utf-8 讀取，如果失敗則嘗試 cp950 (常見於繁體中文 Windows)
+        encodings = ['utf-8', 'cp950', 'latin1']
+        file_content = None
+        
+        for encoding in encodings:
+            try:
+                with open(fpath, 'r', encoding=encoding) as f:
+                    # 讀取所有行，避免在迭代時發生編碼錯誤
+                    file_content = f.readlines()
+                break
+            except UnicodeDecodeError:
+                continue
+        
+        if file_content is None:
+            # 如果所有編碼都失敗，使用 errors='replace'
+            with open(fpath, 'r', encoding='utf-8', errors='replace') as f:
+                file_content = f.readlines()
+
+        for line in file_content:
+            row = line.strip().rsplit(",")
+            if len(row) > 0 and row[0] in {"%", "@", "Label", "", "$", "System Time", "Start Time"}:
+                if len(row) == 5 and row[0] == "" and row[1] == "":
+                    step_name = row[2]         
+                elif len(row) == 2 and row[0] == '%':
+                    last_time_per_step_list.append(len(rows)-1)
+            else:
+                if len(row) == n_cols and is_match_date_string(row[0]):
+                    row.append(step_name)
+                    rows.append(row)
 
         last_time_per_step_list.append(len(rows) - 1)
     except Exception as e:
         logger.error(f"Error processing file {fpath}: {e}")
-        raise Exception("此檔案並非'承德充放電機'檔案格式，請確認選擇檔案。")
+        raise Exception(f"檔案處理錯誤: {str(e)}。請確認檔案格式是否正確。")
 
     return rows, last_time_per_step_list
 
