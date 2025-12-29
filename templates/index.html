@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>電池測試器 Web App</title>
+    <!-- 引入 pako 庫用於解壓縮 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -451,6 +453,11 @@
                     body: formData
                 });
 
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`伺服器錯誤 (${response.status}): ${errorText.substring(0, 100)}...`);
+                }
+
                 const result = await response.json();
                 
                 clearInterval(progressInterval);
@@ -464,7 +471,26 @@
             } catch (error) {
                 clearInterval(progressInterval);
                 progressBar.style.display = 'none';
+                console.error('Upload error:', error);
                 alert('處理錯誤: ' + error.message);
+            }
+        }
+
+        // Base64 解碼並解壓縮函數
+        function decompressData(b64Data) {
+            try {
+                // Base64 decode
+                const strData = atob(b64Data);
+                // Convert to Uint8Array
+                const charData = strData.split('').map(x => x.charCodeAt(0));
+                const binData = new Uint8Array(charData);
+                // Decompress using pako
+                const data = pako.inflate(binData);
+                // Decode to string
+                return new TextDecoder().decode(data);
+            } catch (e) {
+                console.error("Decompression failed:", e);
+                return null;
             }
         }
 
@@ -482,13 +508,29 @@
                     let detailDownloadAttr = '';
                     let stepDownloadAttr = '';
 
-                    if (file.detail_content) {
+                    // 優先使用壓縮的內容
+                    if (file.detail_content_b64) {
+                        const csvContent = decompressData(file.detail_content_b64);
+                        if (csvContent) {
+                            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                            detailHref = URL.createObjectURL(blob);
+                            detailDownloadAttr = `download="${file.detail_file}"`;
+                        }
+                    } else if (file.detail_content) {
+                        // 向下兼容舊版未壓縮內容
                         const blob = new Blob([file.detail_content], { type: 'text/csv;charset=utf-8;' });
                         detailHref = URL.createObjectURL(blob);
                         detailDownloadAttr = `download="${file.detail_file}"`;
                     }
                     
-                    if (file.step_content) {
+                    if (file.step_content_b64) {
+                        const csvContent = decompressData(file.step_content_b64);
+                        if (csvContent) {
+                            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                            stepHref = URL.createObjectURL(blob);
+                            stepDownloadAttr = `download="${file.step_file}"`;
+                        }
+                    } else if (file.step_content) {
                         const blob = new Blob([file.step_content], { type: 'text/csv;charset=utf-8;' });
                         stepHref = URL.createObjectURL(blob);
                         stepDownloadAttr = `download="${file.step_file}"`;

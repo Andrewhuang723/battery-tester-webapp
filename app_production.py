@@ -11,6 +11,8 @@ from werkzeug.utils import secure_filename
 import re
 from datetime import datetime
 import logging
+import gzip
+import base64
 
 # 設置日誌
 logging.basicConfig(level=logging.INFO)
@@ -23,8 +25,9 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'battery_tester_producti
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # 確保資料夾存在
-UPLOAD_FOLDER = 'uploads'
-PROCESSED_FOLDER = 'processed'
+# 在 Vercel 等 Serverless 環境中，通常只能寫入 /tmp 目錄
+UPLOAD_FOLDER = '/tmp/uploads'
+PROCESSED_FOLDER = '/tmp/processed'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PROCESSED_FOLDER, exist_ok=True)
 
@@ -104,10 +107,21 @@ def process_battery_data(file_path, output_folder):
         step_df.to_csv(step_file_path, index=False)
         
         logger.info(f"處理完成: {len(df)} 行資料, {len(step_df)} 個步驟")
+
+        # 壓縮資料以減少傳輸大小 (解決 Vercel 4.5MB 限制)
+        def compress_data(data_str):
+            try:
+                compressed = gzip.compress(data_str.encode('utf-8'))
+                return base64.b64encode(compressed).decode('ascii')
+            except Exception as e:
+                logger.error(f"壓縮失敗: {e}")
+                return None
         
         return True, {
             'detail_file': f"{filename_head}_detail.csv",
             'step_file': f"{filename_head}_step.csv",
+            'detail_content_b64': compress_data(df.to_csv(index=False)),
+            'step_content_b64': compress_data(step_df.to_csv(index=False)),
             'total_rows': len(df),
             'step_rows': len(step_df)
         }
@@ -149,6 +163,8 @@ def upload_files():
                         'original': filename,
                         'detail_file': result['detail_file'],
                         'step_file': result['step_file'],
+                        'detail_content_b64': result.get('detail_content_b64'),
+                        'step_content_b64': result.get('step_content_b64'),
                         'message': f"成功處理 {result['total_rows']} 行資料，產生 {result['step_rows']} 個步驟記錄"
                     })
                 else:
