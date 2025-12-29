@@ -477,6 +477,23 @@
             if (result.processed_files && result.processed_files.length > 0) {
                 html += '<h4>✅ 處理成功的檔案:</h4>';
                 result.processed_files.forEach(file => {
+                    let detailHref = `/download/${file.detail_file}`;
+                    let stepHref = `/download/${file.step_file}`;
+                    let detailDownloadAttr = '';
+                    let stepDownloadAttr = '';
+
+                    if (file.detail_content) {
+                        const blob = new Blob([file.detail_content], { type: 'text/csv;charset=utf-8;' });
+                        detailHref = URL.createObjectURL(blob);
+                        detailDownloadAttr = `download="${file.detail_file}"`;
+                    }
+                    
+                    if (file.step_content) {
+                        const blob = new Blob([file.step_content], { type: 'text/csv;charset=utf-8;' });
+                        stepHref = URL.createObjectURL(blob);
+                        stepDownloadAttr = `download="${file.step_file}"`;
+                    }
+
                     html += `
                         <div class="file-item">
                             <div class="file-info">
@@ -484,8 +501,8 @@
                                 <div class="file-size">${file.message}</div>
                             </div>
                             <div>
-                                <a href="/download/${file.detail_file}" class="download-btn">📊 詳細資料</a>
-                                <a href="/download/${file.step_file}" class="download-btn">📋 步驟資料</a>
+                                <a href="${detailHref}" ${detailDownloadAttr} class="download-btn">📊 詳細資料</a>
+                                <a href="${stepHref}" ${stepDownloadAttr} class="download-btn">📋 步驟資料</a>
                             </div>
                         </div>
                     `;
