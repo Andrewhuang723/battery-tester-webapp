@@ -42,6 +42,15 @@
             font-weight: 300;
         }
 
+        .header img {
+            max-height: 60px;
+            margin-bottom: 15px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
         .header p {
             font-size: 1.1rem;
             opacity: 0.9;
@@ -297,8 +306,9 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔋 電池測試器</h1>
-            <p>承德充放電機 CSV 資料處理工具 - Web版本</p>
+            <img src="{{ url_for('static', filename='foxconn.png') }}" alt="Foxconn Logo">
+            <h1>🔋 承德充放電機data preprocessing web app</h1>
+            <p>Powered by 高階分析實驗室</p>
         </div>
 
         <div class="main-content">
@@ -329,28 +339,10 @@
                     <!-- 結果內容將在這裡顯示 -->
                 </div>
             </div>
-
-            <div class="features">
-                <div class="feature">
-                    <div class="feature-icon">⚡</div>
-                    <h3>快速處理</h3>
-                    <p>自動轉換時間格式，快速處理大量資料</p>
-                </div>
-                <div class="feature">
-                    <div class="feature-icon">🌐</div>
-                    <h3>跨平台</h3>
-                    <p>在任何有瀏覽器的設備上使用，無需安裝軟體</p>
-                </div>
-                <div class="feature">
-                    <div class="feature-icon">🔒</div>
-                    <h3>安全可靠</h3>
-                    <p>資料在本地處理，保護您的隱私</p>
-                </div>
-            </div>
         </div>
 
         <div class="footer">
-            <p>&copy; 2024 電池測試器 Web App | 專為承德充放電機資料處理設計</p>
+            <p>&copy; 若有問題請洽 高階分析實驗室 Andrew Huang</p>
         </div>
     </div>
 
