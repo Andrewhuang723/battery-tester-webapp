@@ -314,7 +314,7 @@
         <div class="main-content">
             <div class="upload-section" id="uploadSection">
                 <div class="upload-icon">📁</div>
-                <h3>上傳電池測試檔案</h3>
+                <h3>上傳電池測試檔案（請確認為承德充放電機輸出格式）</h3>
                 <p>支援 CSV、XLS、XLSX 格式 - 拖曳檔案到此處或點擊選擇檔案</p>
                 <input type="file" id="fileInput" class="file-input" multiple accept=".csv,.xls,.xlsx">
                 <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
@@ -535,8 +535,8 @@
                                 <div class="file-size">${file.message}</div>
                             </div>
                             <div>
-                                <a href="${detailHref}" ${detailDownloadAttr} class="download-btn">📊 詳細資料</a>
-                                <a href="${stepHref}" ${stepDownloadAttr} class="download-btn">📋 步驟資料</a>
+                                <a href="${detailHref}" ${detailDownloadAttr} class="download-btn">📊 下載detail data</a>
+                                <a href="${stepHref}" ${stepDownloadAttr} class="download-btn">📋 下載step data</a>
                             </div>
                         </div>
                     `;
