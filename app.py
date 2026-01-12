@@ -7,6 +7,7 @@ import zipfile
 from werkzeug.utils import secure_filename
 import re
 from datetime import datetime
+from utils import get_n_cols, is_match_date_string, extract_origin_csv
 
 app = Flask(__name__)
 app.secret_key = 'battery_tester_secret_key_2024'
@@ -32,7 +33,7 @@ def convert_to_seconds(row):
 
 def get_n_cols(fpath: str):
     """
-    取得欄位數量 (來自 utils.py)
+    Get the number of columns
     """
     f = open(fpath, 'r')
     for line in f.readlines():
@@ -42,35 +43,42 @@ def get_n_cols(fpath: str):
     return 0
 
 def is_match_date_string(ds: str):
-    """
-    檢查是否符合日期格式 (來自 utils.py)
-    """
     pattern = r"^\d{2}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}$"
     if re.match(pattern, ds):
         return True
     return False
 
-def extract_origin_csv_original(fpath: str):
+def extract_origin_csv(fpath: str):
     """
-    原始的 extract_origin_csv 函數 (來自 utils.py)
-    處理承德充放電機CSV檔案格式
+    The following content is the header of tester.
+    %	Time								
+    @	16								
+    Label	Fuction	Set	Record Time	Change					
+            "Charge	CC-CV	I=2.500	V=3.700"	00:15.0	"Time=05:00:00--Next	EC=0.125--Next"					
+    $	16	Loop (S1)=1/2000	Loop (S2)=8/100						
+    System Time	Step Time	V	I	T	R	P	mAh	Wh	Total Time
     """
     f = open(fpath, 'r')
     rows = []
     last_time_per_step_list = []
     step_name = None
     n_cols = get_n_cols(fpath=fpath)
+    is_reading_protocol = False
 
     try:
         for line in f.readlines():
             row = line.strip().rsplit(",")
-            if len(row) > 0 and row[0] in {"%", "@", "Label", "", "$", "System Time", "Start Time"}: #content
-                if len(row) == 5 and row[0] == "" and row[1] == "": #header line 4
-                    step_name = row[2]         
+            if is_reading_protocol:
+                step_name = row[2]
+                is_reading_protocol = False  
+            if len(row) > 0 and row[0].startswith(("%", "@", "Label", "$", "System Time", "Start Time")): #content
+                if len(row) == 5 and row[0] == "Label": #header line 4
+                    is_reading_protocol = True          
                 elif len(row) == 2 and row[0] == '%': # header line 1
                     last_time_per_step_list.append(len(rows)-1)
                 else:
                     pass
+                
             else:
                 if len(row) == n_cols and is_match_date_string(row[0]): # ensure the number of columns matches the data columns
                     row.append(step_name)
@@ -81,6 +89,7 @@ def extract_origin_csv_original(fpath: str):
     except:
         raise Exception("此檔案並非'承德充放電機'檔案格式，請確認選擇檔案。")
 
+    
     return rows, last_time_per_step_list
 
 def process_battery_data(file_path, output_folder):
@@ -89,7 +98,7 @@ def process_battery_data(file_path, output_folder):
     """
     try:
         # 使用原始的 extract_origin_csv 函數
-        rows, steps = extract_origin_csv_original(file_path)
+        rows, steps = extract_origin_csv(file_path)
         
         # 建立 DataFrame
         df = pd.DataFrame(rows)

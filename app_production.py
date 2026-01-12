@@ -45,100 +45,65 @@ def convert_to_seconds(row):
         return None
 
 def get_n_cols(fpath: str):
-    """取得欄位數量"""
-    try:
-        # 簡單的編碼偵測
-        encodings = ['utf-8', 'cp950', 'latin1']
-        for encoding in encodings:
-            try:
-                with open(fpath, 'r', encoding=encoding) as f:
-                    for line in f:
-                        row = line.strip().rsplit(",")
-                        if len(row) > 0 and row[0] == "System Time":
-                            return len(row)
-                break
-            except UnicodeDecodeError:
-                continue
-    except Exception:
-        pass
+    """
+    Get the number of columns
+    """
+    f = open(fpath, 'r')
+    for line in f.readlines():
+        row = line.strip().rsplit(",")
+        if len(row) > 0 and row[0] == "System Time":
+            return len(row)
     return 0
 
 def is_match_date_string(ds: str):
-    """檢查是否符合日期格式"""
     pattern = r"^\d{2}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}$"
-    return bool(re.match(pattern, ds))
+    if re.match(pattern, ds):
+        return True
+    return False
 
-def extract_origin_csv_original(fpath: str):
-    """處理承德充放電機CSV檔案格式"""
-    # rows = []  # 不再使用 list 儲存所有 rows
+def extract_origin_csv(fpath: str):
+    """
+    The following content is the header of tester.
+    %	Time								
+    @	16								
+    Label	Fuction	Set	Record Time	Change					
+            "Charge	CC-CV	I=2.500	V=3.700"	00:15.0	"Time=05:00:00--Next	EC=0.125--Next"					
+    $	16	Loop (S1)=1/2000	Loop (S2)=8/100						
+    System Time	Step Time	V	I	T	R	P	mAh	Wh	Total Time
+    """
+    f = open(fpath, 'r')
+    rows = []
     last_time_per_step_list = []
-    step_name = "Unknown"
+    step_name = None
     n_cols = get_n_cols(fpath=fpath)
-    
-    # 使用 StringIO 作為緩衝區，減少記憶體碎片化
-    csv_buffer = io.StringIO()
-    row_count = 0
+    is_reading_protocol = False
 
     try:
-        # 嘗試使用 utf-8 讀取，如果失敗則嘗試 cp950 (常見於繁體中文 Windows)
-        encodings = ['utf-8', 'cp950', 'latin1']
-        
-        # 使用迭代器而非 readlines() 以節省記憶體
-        file_iterator = None
-        
-        for encoding in encodings:
-            try:
-                # 測試是否能讀取
-                with open(fpath, 'r', encoding=encoding) as f:
-                    f.read(1024) # 嘗試讀取一小段
-                
-                # 如果成功，重新開啟並使用該編碼
-                file_iterator = open(fpath, 'r', encoding=encoding)
-                break
-            except UnicodeDecodeError:
-                continue
-        
-        if file_iterator is None:
-            # 如果所有編碼都失敗，使用 errors='replace'
-            file_iterator = open(fpath, 'r', encoding='utf-8', errors='replace')
-
-        try:
-            for line in file_iterator:
-                # 快速檢查是否為特殊行，避免 split 所有行
-                stripped_line = line.strip()
-                if not stripped_line:
-                    continue
-                    
-                # 簡單的字串檢查比 split 快
-                if stripped_line.startswith(('%', '@', 'Label', '$', 'System Time', 'Start Time')) or stripped_line.startswith(',,'):
-                    row = stripped_line.rsplit(',')
-                    if len(row) >= 3 and row[0] == "" and row[1] == "":
-                        step_name = row[2]         
-                    elif len(row) >= 1 and row[0] == '%':
-                        last_time_per_step_list.append(row_count - 1)
+        for line in f.readlines():
+            row = line.strip().rsplit(",")
+            if is_reading_protocol:
+                step_name = row[2]
+                is_reading_protocol = False  
+            if len(row) > 0 and row[0].startswith(("%", "@", "Label", "$", "System Time", "Start Time")): #content
+                if len(row) == 5 and row[0] == "Label": #header line 4
+                    is_reading_protocol = True          
+                elif len(row) == 2 and row[0] == '%': # header line 1
+                    last_time_per_step_list.append(len(rows)-1)
                 else:
-                    # 這是資料行嗎？
-                    # 為了效能，我們先檢查開頭是否為數字 (日期格式)
-                    if stripped_line[0].isdigit():
-                        row = stripped_line.rsplit(',')
-                        if len(row) == n_cols and is_match_date_string(row[0]):
-                            # 寫入 buffer，補上 step_name
-                            # 注意：這裡我們手動構建 CSV 行，比 append list 快
-                            csv_buffer.write(f"{stripped_line},{step_name}\n")
-                            row_count += 1
-        finally:
-            file_iterator.close()
+                    pass
+                
+            else:
+                if len(row) == n_cols and is_match_date_string(row[0]): # ensure the number of columns matches the data columns
+                    row.append(step_name)
+                    rows.append(row)
 
-        last_time_per_step_list.append(row_count - 1)
-        
-        # 將 buffer 轉回開頭
-        csv_buffer.seek(0)
-        
-        return csv_buffer, last_time_per_step_list
-        
-    except Exception as e:
-        logger.error(f"Error processing file {fpath}: {e}")
-        raise Exception(f"檔案處理錯誤: {str(e)}。請確認檔案格式是否正確。")
+        last_time_per_step_list.append(len(rows) -1)
+    
+    except:
+        raise Exception("此檔案並非'承德充放電機'檔案格式，請確認選擇檔案。")
+
+    
+    return rows, last_time_per_step_list
 
 def process_battery_data(file_path, output_folder):
     """完整的電池資料處理函數"""
@@ -150,30 +115,17 @@ def process_battery_data(file_path, output_folder):
         if file_size > 50 * 1024 * 1024: # 50MB
             logger.warning(f"檔案過大 ({file_size/1024/1024:.2f} MB)，可能會導致處理超時")
 
-        csv_buffer, steps = extract_origin_csv_original(file_path)
+        rows, steps = extract_origin_csv(file_path)
         
-        # 使用 read_csv 直接從 buffer 讀取，比 DataFrame(rows) 快且省記憶體
-        # 我們需要手動指定欄位名稱，因為 buffer 中沒有 header
-        col_names = ["System Time", "Step Time", "V", "I", "T", "R", "P", "mAh", "Wh", "Total Time", "Step name"]
-        
+        # 建立 DataFrame
         try:
-            df = pd.read_csv(csv_buffer, names=col_names, header=None)
-        except pd.errors.EmptyDataError:
+            df = pd.DataFrame(rows)
+            df.columns = ["System Time", "Step Time", "V", "I", "T", "R", "P", "mAh", "Wh", "Total Time", "Step name"]
+        except Exception:
              return False, "無法從檔案中提取有效數據，請確認檔案內容。"
-             
-        # 釋放 buffer
-        csv_buffer.close()
-        del csv_buffer
-        gc.collect()
 
-        df["System Time"] = pd.to_datetime(df["System Time"], format="%y/%m/%d %H:%M:%S", errors='coerce')
-        # 移除無法轉換時間的行
-        df = df.dropna(subset=["System Time"])
-        
-        # 轉換數值欄位
-        numeric_cols = ["V", "I", "T", "R", "P", "mAh", "Wh"]
-        for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+        df["System Time"] = df["System Time"].apply(lambda s: pd.to_datetime(s, format="%y/%m/%d %H:%M:%S"))
+        df[["V", "I", "T", "R", "P", "mAh", "Wh"]] = df[["V", "I", "T", "R", "P", "mAh", "Wh"]].astype(dtype=float)
         
         filename_head = os.path.basename(file_path).split(".")[0]
         
@@ -185,9 +137,15 @@ def process_battery_data(file_path, output_folder):
         # step_file_path = os.path.join(output_folder, f"{filename_head}_step.csv")
         # step_df.to_csv(step_file_path, index=False)
         
-        # 確保 steps 索引在有效範圍內
-        valid_steps = [s for s in steps if 0 <= s < len(df)]
-        step_df = df.iloc[valid_steps] # 使用 iloc 因為 steps 是整數位置
+        # 使用 loc 以配合 test.ipynb 的邏輯 (注意：如果 steps 包含 -1，這裡可能會出錯，但為了保持與 notebook 一致先這樣改)
+        # 前提是 steps 索引必須有效
+        # notebook 中是 step_df = df.loc[steps]
+        
+        # 為了避免 crash，我們過濾掉負值索引 (notebook 中如果有 -1 應該也會錯，除非資料特性讓它剛好避開)
+        # 但既然使用者要求一致，我們先嘗試直接 filter 掉顯然錯誤的索引，或者假設 notebook 正確
+        # 這裡我們保留最小限度的保護：只取有效的索引
+        valid_steps = [s for s in steps if s in df.index]
+        step_df = df.loc[valid_steps]
         
         logger.info(f"處理完成: {len(df)} 行資料, {len(step_df)} 個步驟")
 

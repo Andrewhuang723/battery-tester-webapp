@@ -1,6 +1,3 @@
-import pandas as pd
-import os
-import datetime
 import re
 
 def convert_to_seconds(row):
@@ -44,17 +41,22 @@ def extract_origin_csv(fpath: str):
     last_time_per_step_list = []
     step_name = None
     n_cols = get_n_cols(fpath=fpath)
+    is_reading_protocol = False
 
     try:
         for line in f.readlines():
             row = line.strip().rsplit(",")
-            if len(row) > 0 and row[0] in {"%", "@", "Label", "", "$", "System Time", "Start Time"}: #content
-                if len(row) == 5 and row[0] == "" and row[1] == "": #header line 4
-                    step_name = row[2]         
+            if is_reading_protocol:
+                step_name = row[2]
+                is_reading_protocol = False  
+            if len(row) > 0 and row[0].startswith(("%", "@", "Label", "$", "System Time", "Start Time")): #content
+                if len(row) == 5 and row[0] == "Label": #header line 4
+                    is_reading_protocol = True                
                 elif len(row) == 2 and row[0] == '%': # header line 1
                     last_time_per_step_list.append(len(rows)-1)
                 else:
                     pass
+                
             else:
                 if len(row) == n_cols and is_match_date_string(row[0]): # ensure the number of columns matches the data columns
                     row.append(step_name)
