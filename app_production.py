@@ -63,47 +63,94 @@ def is_match_date_string(ds: str):
 
 def extract_origin_csv(fpath: str):
     """
-    The following content is the header of tester.
-    %	Time								
-    @	16								
-    Label	Fuction	Set	Record Time	Change					
-            "Charge	CC-CV	I=2.500	V=3.700"	00:15.0	"Time=05:00:00--Next	EC=0.125--Next"					
-    $	16	Loop (S1)=1/2000	Loop (S2)=8/100						
-    System Time	Step Time	V	I	T	R	P	mAh	Wh	Total Time
+    處理承德充放電機CSV檔案格式 (優化版)
+    避免使用 list 儲存所有 rows 以減少記憶體佔用
     """
-    f = open(fpath, 'r')
-    rows = []
     last_time_per_step_list = []
-    step_name = None
+    step_name = "Unknown"
     n_cols = get_n_cols(fpath=fpath)
     is_reading_protocol = False
+    
+    # 使用 StringIO 作為緩衝區
+    csv_buffer = io.StringIO()
+    row_count = 0
 
     try:
-        for line in f.readlines():
-            row = line.strip().rsplit(",")
-            if is_reading_protocol:
-                step_name = row[2]
-                is_reading_protocol = False  
-            if len(row) > 0 and row[0].startswith(("%", "@", "Label", "$", "System Time", "Start Time")): #content
-                if len(row) == 5 and row[0] == "Label": #header line 4
-                    is_reading_protocol = True          
-                elif len(row) == 2 and row[0] == '%': # header line 1
-                    last_time_per_step_list.append(len(rows)-1)
+        # 嘗試多種編碼
+        encodings = ['utf-8', 'cp950', 'latin1']
+        file_iterator = None
+        
+        for encoding in encodings:
+            try:
+                with open(fpath, 'r', encoding=encoding) as f:
+                    f.read(1024) 
+                file_iterator = open(fpath, 'r', encoding=encoding)
+                break
+            except UnicodeDecodeError:
+                continue
+        
+        if file_iterator is None:
+            file_iterator = open(fpath, 'r', encoding='utf-8', errors='replace')
+
+        try:
+            for line in file_iterator:
+                stripped_line = line.strip()
+                if not stripped_line:
+                    continue
+
+                if stripped_line.startswith(("%", "@", "Label", "$", "System Time", "Start Time")):
+                    row = stripped_line.rsplit(",")
+                    
+                    if len(row) > 0 and row[0] == "Label":
+                         is_reading_protocol = True
+                    elif is_reading_protocol: # Previous logic had this check slightly different, adapting
+                         if len(row) > 2:
+                            step_name = row[2]
+                         is_reading_protocol = False
+                         
+                    # Re-implementing the exact logic from original function but with efficient parsing
+                    if is_reading_protocol and len(row) >= 3 and row[0] == "" and row[1] == "": # Wait, strict logic check
+                        pass # The original logic was line-based state machine.
+                    
+                    # Original logic revisited:
+                    # if len(row) > 0 and row[0].startswith(...):
+                    #    if len(row) == 5 and row[0] == "Label": is_reading_protocol = True
+                    #    elif len(row) == 2 and row[0] == '%': last_time_per_step_list.append(...)
+                    
+                    # But wait, step_name was extracted when?
+                    # Original:
+                    # if is_reading_protocol:
+                    #    step_name = row[2]
+                    #    is_reading_protocol = False
+                    
+                    if len(row) == 5 and row[0] == "Label":
+                        is_reading_protocol = True
+                    elif len(row) == 2 and row[0] == '%':
+                        last_time_per_step_list.append(row_count - 1)
+                elif is_reading_protocol:
+                     # This handle the line AFTER "Label"
+                     row = stripped_line.rsplit(",")
+                     if len(row) > 2:
+                        step_name = row[2]
+                     is_reading_protocol = False
                 else:
-                    pass
-                
-            else:
-                if len(row) == n_cols and is_match_date_string(row[0]): # ensure the number of columns matches the data columns
-                    row.append(step_name)
-                    rows.append(row)
+                    if stripped_line[0].isdigit(): # Simple check for date
+                        row = stripped_line.rsplit(",")
+                        if len(row) == n_cols and is_match_date_string(row[0]):
+                            csv_buffer.write(f"{stripped_line},{step_name}\n")
+                            row_count += 1
+        finally:
+             if file_iterator:
+                file_iterator.close()
 
-        last_time_per_step_list.append(len(rows) -1)
+        last_time_per_step_list.append(row_count - 1)
+        csv_buffer.seek(0)
+        
+        return csv_buffer, last_time_per_step_list
     
-    except:
+    except Exception as e:
+        logger.error(f"Error processing file {fpath}: {e}")
         raise Exception("此檔案並非'承德充放電機'檔案格式，請確認選擇檔案。")
-
-    
-    return rows, last_time_per_step_list
 
 def process_battery_data(file_path, output_folder):
     """完整的電池資料處理函數"""
@@ -117,15 +164,27 @@ def process_battery_data(file_path, output_folder):
 
         rows, steps = extract_origin_csv(file_path)
         
-        # 建立 DataFrame
+        # 建立 DataFrame (Optimized)
         try:
-            df = pd.DataFrame(rows)
-            df.columns = ["System Time", "Step Time", "V", "I", "T", "R", "P", "mAh", "Wh", "Total Time", "Step name"]
-        except Exception:
+            # rows now is a StringIO buffer
+            col_names = ["System Time", "Step Time", "V", "I", "T", "R", "P", "mAh", "Wh", "Total Time", "Step name"]
+            df = pd.read_csv(rows, names=col_names, header=None)
+            
+            # Close buffer
+            rows.close()
+            del rows
+            gc.collect()
+            
+        except Exception as e:
+             logger.error(f"DataFrame creation failed: {e}")
              return False, "無法從檔案中提取有效數據，請確認檔案內容。"
 
-        df["System Time"] = df["System Time"].apply(lambda s: pd.to_datetime(s, format="%y/%m/%d %H:%M:%S"))
-        df[["V", "I", "T", "R", "P", "mAh", "Wh"]] = df[["V", "I", "T", "R", "P", "mAh", "Wh"]].astype(dtype=float)
+        df["System Time"] = pd.to_datetime(df["System Time"], format="%y/%m/%d %H:%M:%S", errors='coerce')
+        df = df.dropna(subset=["System Time"]) # Ensure valid date
+
+        numeric_cols = ["V", "I", "T", "R", "P", "mAh", "Wh"]
+        for col in numeric_cols:
+             df[col] = pd.to_numeric(df[col], errors='coerce')
         
         filename_head = os.path.basename(file_path).split(".")[0]
         
