@@ -268,7 +268,7 @@ def upload_files():
     current_response_size = 0
     
     for file in files:
-        if file and (file.filename.endswith('.csv') or file.filename.endswith('.xls') or file.filename.endswith('.xlsx')):
+        if file and (file.filename.endswith('.csv') or file.filename.endswith('.xls') or file.filename.endswith('.xlsx') or file.filename.endswith('.001')):
             try:
                 # 檢查目前回應大小是否已接近上限
                 if current_response_size > MAX_RESPONSE_SIZE:
@@ -326,7 +326,7 @@ def upload_files():
                 except:
                     pass
         else:
-            errors.append(f"{file.filename}: 不是有效的檔案格式（支援 .csv, .xls, .xlsx）")
+            errors.append(f"{file.filename}: 不是有效的檔案格式（支援 .csv, .xls, .xlsx, .001）")
     
     return jsonify({
         'success': len(processed_files) > 0,
